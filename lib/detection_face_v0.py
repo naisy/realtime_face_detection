@@ -279,9 +279,9 @@ class FACEV0():
         """ STATISTICS FONT """
         fontFace = cv2.FONT_HERSHEY_SIMPLEX
         fontScale = frame_rows/1000.0
+        if fontScale < 0.4:
+            fontScale = 0.4
         fontThickness = 1 + int(fontScale)
-        string = "Sample sting"
-        [(text_width, text_height), baseLine] = cv2.getTextSize(text=string, fontFace=fontFace, fontScale=fontScale, thickness=fontThickness)
 
 
         """ """ """ """ """ """ """ """ """ """ """
@@ -364,13 +364,14 @@ class FACEV0():
                 DRAW FPS, TEXT
                 """
                 if VIS_TEXT:
-                    x_left = int(baseLine)
-                    y_top = int(text_height*1.2*3)
                     display_str = []
                     max_text_width = 0
                     max_text_height = 0
                     display_str.append("fps: {:.1f}".format(MPVariable.fps.value))
                     display_str.append("Detection: {}".format(np.sum(face_counter)))
+                    [(text_width, text_height), baseLine] = cv2.getTextSize(text=display_str[0], fontFace=fontFace, fontScale=fontScale, thickness=fontThickness)
+                    x_left = int(baseLine)
+                    y_top = int(text_height*1.2*3)
                     for i in range(len(display_str)):
                         [(text_width, text_height), baseLine] = cv2.getTextSize(text=display_str[i], fontFace=fontFace, fontScale=fontScale, thickness=fontThickness)
                         if max_text_width < text_width:
