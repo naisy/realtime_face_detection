@@ -108,7 +108,7 @@ class LoadFrozenGraph():
         tf.reset_default_graph()
 
         """ ADD CPU INPUT """
-        target_in = [tf.placeholder(tf.float32, shape=(None, split_shape, 2), name=SPLIT_TARGET_NAME[0]),
+        target_in = [tf.placeholder(tf.float32, shape=(None, split_shape, num_classes), name=SPLIT_TARGET_NAME[0]),
                      tf.placeholder(tf.float32, shape=(None, split_shape, 1, 4), name=SPLIT_TARGET_NAME[1]),
                      ]
 
