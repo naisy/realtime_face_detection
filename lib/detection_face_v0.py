@@ -259,14 +259,7 @@ class FACEV0():
                     break
         """ """
 
-        """
-        TEXT SETTINGS
-        """
-        fontFace = cv2.FONT_HERSHEY_SIMPLEX
-        fontScale = 0.4
-        fontThickness = 1
-        face_counter = 0
-        
+
         """ """ """ """ """ """ """ """ """ """ """
         START CAMERA
         """ """ """ """ """ """ """ """ """ """ """
@@ -276,7 +269,20 @@ class FACEV0():
             from lib.video import VideoReader
         video_reader = VideoReader()
         video_reader.start(VIDEO_INPUT, WIDTH, HEIGHT, save_to_movie=SAVE_TO_MOVIE)
+        frame_cols, frame_rows = video_reader.getSize()
         """ """
+
+
+        """ """ """ """ """ """ """ """ """ """ """
+        FONT
+        """ """ """ """ """ """ """ """ """ """ """
+        """ STATISTICS FONT """
+        fontFace = cv2.FONT_HERSHEY_SIMPLEX
+        fontScale = frame_rows/1000.0
+        fontThickness = 1 + int(fontScale)
+        string = "Sample sting"
+        [(text_width, text_height), baseLine] = cv2.getTextSize(text=string, fontFace=fontFace, fontScale=fontScale, thickness=fontThickness)
+
 
         """ """ """ """ """ """ """ """ """ """ """
         DETECTION LOOP
@@ -355,26 +361,27 @@ class FACEV0():
                     face_counter += 1
 
                 """
-                DRAW FPS, DETECT TEXT
+                DRAW FPS, TEXT
                 """
-                x_left = 10
-                y_top = 60
-                display_str = []
-                max_text_width = 0
-                max_text_height = 0
-                display_str.append("fps: {:.1f}".format(MPVariable.fps.value))
-                display_str.append("Detect: {}".format(np.sum(face_counter)))
-                for i in range(len(display_str)):
-                    [(text_width, text_height), baseLine] = cv2.getTextSize(text=display_str[i], fontFace=fontFace, fontScale=fontScale, thickness=fontThickness)
-                    if max_text_width < text_width:
-                        max_text_width = text_width
-                    if max_text_height < text_height:
-                        max_text_height = text_height
-                """ DRAW BLACK BOX """
-                cv2.rectangle(img, (x_left - 2, int(y_top)), (int(x_left + max_text_width + 2), int(y_top + len(display_str)*max_text_height*1.2+baseLine)), color=(0, 0, 0), thickness=-1)
-                """ DRAW FPS, DETECT TEXT """
-                for i in range(len(display_str)):
-                    cv2.putText(img, display_str[i], org=(x_left, y_top + int(max_text_height*1.2 + (max_text_height*1.2 * i))), fontFace=fontFace, fontScale=fontScale, thickness=fontThickness, color=(77, 255, 9))
+                if VIS_TEXT:
+                    x_left = int(baseLine)
+                    y_top = int(text_height*1.2*3)
+                    display_str = []
+                    max_text_width = 0
+                    max_text_height = 0
+                    display_str.append("fps: {:.1f}".format(MPVariable.fps.value))
+                    display_str.append("Detection: {}".format(np.sum(face_counter)))
+                    for i in range(len(display_str)):
+                        [(text_width, text_height), baseLine] = cv2.getTextSize(text=display_str[i], fontFace=fontFace, fontScale=fontScale, thickness=fontThickness)
+                        if max_text_width < text_width:
+                            max_text_width = text_width
+                        if max_text_height < text_height:
+                            max_text_height = text_height
+                    """ DRAW BLACK BOX """
+                    cv2.rectangle(img, (x_left - 2, int(y_top)), (int(x_left + max_text_width + 2), int(y_top + len(display_str)*max_text_height*1.2+baseLine)), color=(0, 0, 0), thickness=-1)
+                    """ DRAW FPS, TEXT """
+                    for i in range(len(display_str)):
+                        cv2.putText(img, display_str[i], org=(x_left, y_top + int(max_text_height*1.2 + (max_text_height*1.2 * i))), fontFace=fontFace, fontScale=fontScale, thickness=fontThickness, color=(77, 255, 9))
 
                 """
                 VISUALIZATION
@@ -408,7 +415,6 @@ class FACEV0():
                             label = category_index[_class]['name']
                             print("label: {}\nscore: {}\nbox: {}".format(label, score, box))
 
-                    MPVariable.vis_frame_counter.value += 1
                     vis_out_time = time.time()
                     """
                     PROCESSING TIME
