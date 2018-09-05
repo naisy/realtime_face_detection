@@ -11,6 +11,8 @@ from lib.mpio import start_sender
 import time
 import cv2
 import tensorflow as tf
+import copy 
+import os
 
 import sys
 PY2 = sys.version_info[0] == 2
@@ -110,7 +112,7 @@ class FACEV0():
         GET CONFIG
         """ """ """ """ """ """ """ """ """ """ """
         FORCE_GPU_COMPATIBLE = cfg['force_gpu_compatible']
-        SAVE_TO_MOVIE        = cfg['save_to_movie']
+        SAVE_TO_FILE         = cfg['save_to_file']
         VISUALIZE            = cfg['visualize']
         VIS_WORKER           = cfg['vis_worker']
         VIS_TEXT             = cfg['vis_text']
@@ -127,12 +129,20 @@ class FACEV0():
         DEBUG_MODE           = cfg['debug_mode']
         LABEL_PATH           = cfg['label_path']
         NUM_CLASSES          = cfg['num_classes']
-        FROM_CAMERA          = cfg['from_camera']
         MASK_SIZE            = cfg['mask_size']
-        if FROM_CAMERA:
+        SRC_FROM             = cfg['src_from']
+        CAMERA = 0
+        MOVIE  = 1
+        IMAGE  = 2
+        if SRC_FROM == 'camera':
+            SRC_FROM = CAMERA
             VIDEO_INPUT = cfg['camera_input']
-        else:
+        elif SRC_FROM == 'movie':
+            SRC_FROM = MOVIE
             VIDEO_INPUT = cfg['movie_input']
+        elif SRC_FROM == 'image':
+            SRC_FROM = IMAGE
+            VIDEO_INPUT = cfg['image_input']
         """ """
 
         """ """ """ """ """ """ """ """ """ """ """
@@ -213,13 +223,6 @@ class FACEV0():
         proc_frame_counter = 0
         vis_proc_time = 0
 
-        """ """ """ """ """ """ """ """ """ """ """
-        LOAD LABEL MAP
-        """ """ """ """ """ """ """ """ """ """ """
-        llm = LoadLabelMap()
-        category_index = llm.load_label_map(cfg)
-        """ """
-
 
         """ """ """ """ """ """ """ """ """ """ """
         WAIT UNTIL THE FIRST DUMMY IMAGE DONE
@@ -263,25 +266,40 @@ class FACEV0():
         """ """ """ """ """ """ """ """ """ """ """
         START CAMERA
         """ """ """ """ """ """ """ """ """ """ """
-        if FROM_CAMERA:
+        if SRC_FROM == CAMERA:
             from lib.webcam import WebcamVideoStream as VideoReader
-        else:
+        elif SRC_FROM == MOVIE:
             from lib.video import VideoReader
+        elif SRC_FROM == IMAGE:
+            from lib.image import ImageReader as VideoReader
         video_reader = VideoReader()
-        video_reader.start(VIDEO_INPUT, WIDTH, HEIGHT, save_to_movie=SAVE_TO_MOVIE)
-        frame_cols, frame_rows = video_reader.getSize()
+
+        if SRC_FROM == IMAGE:
+            video_reader.start(VIDEO_INPUT, save_to_file=SAVE_TO_FILE)
+        else: # CAMERA, MOVIE
+            video_reader.start(VIDEO_INPUT, WIDTH, HEIGHT, save_to_file=SAVE_TO_FILE)
+            frame_cols, frame_rows = video_reader.getSize()
+            """ STATISTICS FONT """
+            fontScale = frame_rows/1000.0
+            if fontScale < 0.4:
+                fontScale = 0.4
+            fontThickness = 1 + int(fontScale)
+        fontFace = cv2.FONT_HERSHEY_SIMPLEX
+        if SRC_FROM == MOVIE:
+            dir_path, filename = os.path.split(VIDEO_INPUT)
+            filepath_prefix = filename
+        elif SRC_FROM == CAMERA:
+            filepath_prefix = 'frame'
         """ """
 
 
         """ """ """ """ """ """ """ """ """ """ """
         FONT
         """ """ """ """ """ """ """ """ """ """ """
-        """ STATISTICS FONT """
-        fontFace = cv2.FONT_HERSHEY_SIMPLEX
-        fontScale = frame_rows/1000.0
-        if fontScale < 0.4:
-            fontScale = 0.4
-        fontThickness = 1 + int(fontScale)
+        """ DETECTION BOX FONT """
+        boxFontFace = cv2.FONT_HERSHEY_SIMPLEX
+        boxFontScale = 0.4
+        boxFontThickness = 1
 
 
         """ """ """ """ """ """ """ """ """ """ """
@@ -290,26 +308,39 @@ class FACEV0():
         print('Starting Detection')
         sleep_interval = 0.005
         top_in_time = None
+        frame_in_processing_counter = 0
         try:
-            while video_reader.running and MPVariable.running.value:
+            if not video_reader.running:
+                raise IOError(("Input src error."))
+            while MPVariable.running.value:
                 if top_in_time is None:
                     top_in_time = time.time()
                 """
                 SPRIT/NON-SPLIT MODEL CAMERA TO WORKER
                 """
-                if gpu_worker.is_sess_empty(): # must need for speed
-                    cap_in_time = time.time()
-                    frame = video_reader.read()
-                    if frame is None:
-                        MPVariable.running.value = False
-                        break
-                    image_expanded = np.expand_dims(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB), axis=0) # np.expand_dims is faster than []
-                    #image_expanded = np.expand_dims(frame, axis=0) # BGR image for input. Of couse, bad accuracy in RGB trained model, but speed up.
-                    cap_out_time = time.time()
-                    # put new queue
-                    gpu_feeds = {image_tensor: image_expanded}
-                    gpu_extras = {'image':frame, 'top_in_time':top_in_time, 'cap_in_time':cap_in_time, 'cap_out_time':cap_out_time} # always image draw.
-                    gpu_worker.put_sess_queue(gpu_opts, gpu_feeds, gpu_extras)
+                if video_reader.running:
+                    if gpu_worker.is_sess_empty(): # must need for speed
+                        cap_in_time = time.time()
+                        if SRC_FROM == IMAGE:
+                            frame, filepath = video_reader.read()
+                            if frame is not None:
+                                frame_in_processing_counter += 1
+                        else:
+                            frame = video_reader.read()
+                            if frame is not None:
+                                filepath = filepath_prefix+'_'+str(proc_frame_counter)+'.png'
+                                frame_in_processing_counter += 1
+                        if frame is not None:
+                            image_expanded = np.expand_dims(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB), axis=0) # np.expand_dims is faster than []
+                            #image_expanded = np.expand_dims(frame, axis=0) # BGR image for input. Of couse, bad accuracy in RGB trained model, but speed up.
+                            cap_out_time = time.time()
+                            # put new queue
+                            gpu_feeds = {image_tensor: image_expanded}
+                            gpu_extras = {'image':frame, 'top_in_time':top_in_time, 'cap_in_time':cap_in_time, 'cap_out_time':cap_out_time, 'filepath': filepath} # always image draw.
+                            gpu_worker.put_sess_queue(gpu_opts, gpu_feeds, gpu_extras)
+                elif frame_in_processing_counter <= 0:
+                    MPVariable.running.value = False
+                    break
 
                 g = gpu_worker.get_result_queue()
                 if SPLIT_MODEL:
@@ -341,6 +372,7 @@ class FACEV0():
                     time.sleep(sleep_interval)
                     continue
 
+                frame_in_processing_counter -= 1
                 boxes, scores, classes, num, extras = q['results'][0], q['results'][1], q['results'][2], q['results'][3], q['extras']
                 det_out_time = time.time()
 
@@ -348,14 +380,25 @@ class FACEV0():
                 ALWAYS BOX DRAW ON IMAGE
                 """
                 vis_in_time = time.time()
-                img = extras['image']
-                faces = face_detection(img.shape, boxes, classes, scores)
+                image = extras['image']
+                if SRC_FROM == IMAGE:
+                    filepath = extras['filepath']
+                    frame_rows, frame_cols = image.shape[:2]
+                    """ STATISTICS FONT """
+                    fontScale = frame_rows/1000.0
+                    if fontScale < 0.4:
+                        fontScale = 0.4
+                    fontThickness = 1 + int(fontScale)
+                else:
+                    filepath = extras['filepath']
+
+                faces = face_detection(image.shape, boxes, classes, scores)
 
                 face_counter = 0
                 for (x,y,w,h) in faces:
-                    img = clip_alpha_image(img, face_mask, x, y, w, h, MASK_SIZE)
+                    image = clip_alpha_image(image, face_mask, x, y, w, h, MASK_SIZE)
                     if DEBUG_MODE:
-                        cv2.rectangle(img,(x,y),(x+w,y+h),(255,0,0),2) #draw rectangle to main image
+                        cv2.rectangle(image,(x,y),(x+w,y+h),(255,0,0),2) #draw rectangle to main image
                     face_counter += 1
 
                 """
@@ -377,10 +420,10 @@ class FACEV0():
                         if max_text_height < text_height:
                             max_text_height = text_height
                     """ DRAW BLACK BOX """
-                    cv2.rectangle(img, (x_left - 2, int(y_top)), (int(x_left + max_text_width + 2), int(y_top + len(display_str)*max_text_height*1.2+baseLine)), color=(0, 0, 0), thickness=-1)
+                    cv2.rectangle(image, (x_left - 2, int(y_top)), (int(x_left + max_text_width + 2), int(y_top + len(display_str)*max_text_height*1.2+baseLine)), color=(0, 0, 0), thickness=-1)
                     """ DRAW FPS, TEXT """
                     for i in range(len(display_str)):
-                        cv2.putText(img, display_str[i], org=(x_left, y_top + int(max_text_height*1.2 + (max_text_height*1.2 * i))), fontFace=fontFace, fontScale=fontScale, thickness=fontThickness, color=(77, 255, 9))
+                        cv2.putText(image, display_str[i], org=(x_left, y_top + int(max_text_height*1.2 + (max_text_height*1.2 * i))), fontFace=fontFace, fontScale=fontScale, thickness=fontThickness, color=(77, 255, 9))
 
                 """
                 VISUALIZATION
@@ -388,13 +431,13 @@ class FACEV0():
                 if VISUALIZE:
                     if (MPVariable.vis_skip_rate.value == 0) or (proc_frame_counter % MPVariable.vis_skip_rate.value < 1):
                         if VIS_WORKER:
-                            q_out.put({'image':img, 'vis_in_time':vis_in_time})
+                            q_out.put({'image':image, 'vis_in_time':vis_in_time})
                         else:
                             #np.set_printoptions(precision=5, suppress=True, threshold=np.inf)  # suppress scientific float notation
                             """
                             SHOW
                             """
-                            cv2.imshow("Object Detection", img)
+                            cv2.imshow("Object Detection", image)
                             # Press q to quit
                             if cv2.waitKey(1) & 0xFF == 113: #ord('q'):
                                 break
@@ -420,8 +463,11 @@ class FACEV0():
                     """
                     vis_proc_time = vis_out_time - vis_in_time
 
-                if SAVE_TO_MOVIE:
-                    video_reader.save(img)
+                if SAVE_TO_FILE:
+                    if SRC_FROM == IMAGE:
+                        video_reader.save(image, filepath)
+                    else:
+                        video_reader.save(image)
 
                 proc_frame_counter += 1
                 if proc_frame_counter > 100000:
@@ -454,7 +500,7 @@ class FACEV0():
                 """
                 EXIT WITHOUT GUI
                 """
-                if not VISUALIZE:
+                if not VISUALIZE and MAX_FRAMES > 0:
                     if proc_frame_counter >= MAX_FRAMES:
                         MPVariable.running.value = False
                         break

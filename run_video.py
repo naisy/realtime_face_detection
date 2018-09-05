@@ -18,7 +18,7 @@ def load_config():
             cfg = yaml.load(ymlfile)
     else:
         raise FileNotFoundError(("File not found: config.yml"))
-    cfg.update({'from_camera':False})
+    cfg.update({'src_from': 'movie'})
     return cfg
 
 def log_format(debug_mode):

@@ -4,6 +4,7 @@
 - edit `config.yml` for your environment. (Ex. video_input: 0 # for PC)
 - run `python run_stream.py` realtime object detection from webcam (Multi-Threading)
 - or run `python run_video.py` realtime object detection from movie file (Multi-Threading)
+- or run `python run_image.py` realtime object detection from image file (Multi-Threading)
 
 ## Requirements:
 ```
